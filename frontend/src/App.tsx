@@ -4,8 +4,8 @@ import BotHistory from './pages/BotHistory'
 import BotTrading from './pages/BotTrading'
 import BotSettings from './pages/BotSettings'
 import BotLivePositions from './pages/BotLivePositions'
-import SlaveAccounts from './pages/SlaveAccounts'
 import FixedLot from './pages/FixedLot'
+import ExnessClones from './pages/ExnessClones'
 import { getPanelWsBase } from './panelWsBase'
 
 const API = '/api'
@@ -76,7 +76,7 @@ function loadSlTpPips(): Record<string, SlTpPips> {
   return defaultSlTpPips()
 }
 
-type Page = 'positions' | 'history' | 'livepositions' | 'trading' | 'settings' | 'slaveaccounts' | 'fixedlot'
+type Page = 'positions' | 'history' | 'livepositions' | 'trading' | 'settings' | 'fixedlot' | 'exnessclones'
 
 export type WorkerPlaceMode = 'both' | 'master_slave_hedge'
 
@@ -169,8 +169,8 @@ const HASH_TO_PAGE: Record<string, Page> = {
   livepositions: 'livepositions',
   trading: 'trading',
   settings: 'settings',
-  slaveaccounts: 'slaveaccounts',
   fixedlot: 'fixedlot',
+  exnessclones: 'exnessclones',
 }
 
 function getPageFromHash(): Page {
@@ -770,8 +770,8 @@ export default function App() {
     livepositions: 'Live Positions',
     trading: 'Bot Trading',
     settings: 'Bot Settings',
-    slaveaccounts: 'Exness copy hedge',
     fixedlot: 'Single account (random lot)',
+    exnessclones: 'Exness terminal clones',
   }
 
   return (
@@ -790,8 +790,8 @@ export default function App() {
           {nav('history', 'Positions History')}
           {nav('livepositions', 'Live Positions')}
           {nav('trading', 'Bot Trading')}
-          {nav('slaveaccounts', 'Exness copy hedge')}
           {nav('fixedlot', 'Single account (random lot)')}
+          {nav('exnessclones', 'Exness terminal clones')}
           {nav('settings', 'Bot Settings')}
         </nav>
       </aside>
@@ -838,8 +838,8 @@ export default function App() {
                 onRefreshPairs={fetchHedgePairs}
               />
             )}
-            {currentPage === 'slaveaccounts' && <SlaveAccounts />}
             {currentPage === 'fixedlot' && <FixedLot />}
+            {currentPage === 'exnessclones' && <ExnessClones />}
             {currentPage === 'trading' && (
               <BotTrading
                 accounts={accounts}
