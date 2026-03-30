@@ -1,0 +1,35 @@
+# Rust
+backend/target/
+backend/data/
+backend/logs/
+
+# Project root logs
+logs/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Python
+python_bridge/__pycache__/
+python_bridge/logs/
+*.pyc
+.venv/
+venv/
+
+# Env
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local Cloudflare tunnel binary (download from GitHub releases if needed)
+tools/cloudflared.exe

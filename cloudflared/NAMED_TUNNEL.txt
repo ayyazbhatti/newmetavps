@@ -1,0 +1,24 @@
+Permanent URL (e.g. https://panel.yourdomain.com) — one-time setup (you must use your Cloudflare account)
+
+1) Add your domain to Cloudflare (nameservers pointed to Cloudflare).
+
+2) Zero Trust dashboard → Networks → Tunnels → Create a tunnel.
+   - Choose "Cloudflared" / install connector.
+   - Copy the tunnel TOKEN (long string).
+
+3) On this Windows machine, set the token and run:
+   set CLOUDFLARE_TUNNEL_TOKEN=paste_token_here
+   powershell -File .\scripts\run-named-tunnel.ps1
+
+   Or install as a Windows service (run elevated CMD):
+   cloudflared service install
+   (follow Cloudflare docs for token-based install on Windows)
+
+4) In the tunnel's "Public Hostname" tab, add:
+   - Subdomain: panel (or @)
+   - Domain: yourdomain.com
+   - Service: http://localhost:5173  (Vite dev) OR http://localhost:3001 if you serve only API
+
+For production, build the frontend (npm run build) and serve dist/ behind one port, or use nginx.
+
+Quick tunnels (*.trycloudflare.com) do NOT need this file — use scripts\dev-with-tunnel.ps1 instead.
