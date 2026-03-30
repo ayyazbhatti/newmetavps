@@ -12,7 +12,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -59,6 +59,86 @@ fn get_terminal_path_static(account_id: &str) -> Option<&'static str> {
         "exness" => Some(r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe"),
         _ => None,
     }
+}
+
+const EXNESS_TEMPLATE_DIR: &str = r"C:\Program Files\MetaTrader 5 EXNESS";
+
+fn exness_clones_root_dir() -> PathBuf {
+    if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        return PathBuf::from(user_profile).join("MT5_Exness_Clones");
+    }
+    PathBuf::from(r"C:\Users\Public\MT5_Exness_Clones")
+}
+
+fn exness_clone_dir_name(index: u32) -> String {
+    format!("Exness_{:02}", index)
+}
+
+fn parse_exness_clone_index(name: &str) -> Option<u32> {
+    let suffix = name.strip_prefix("Exness_")?;
+    let n = suffix.parse::<u32>().ok()?;
+    if n == 0 { None } else { Some(n) }
+}
+
+fn list_existing_exness_clone_names(root: &Path) -> std::io::Result<Vec<String>> {
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let mut names: Vec<(u32, String)> = Vec::new();
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some(idx) = parse_exness_clone_index(&name) {
+            names.push((idx, name));
+        }
+    }
+    names.sort_by_key(|x| x.0);
+    Ok(names.into_iter().map(|x| x.1).collect())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+fn create_exness_clones_to_count(template_dir: &Path, clones_root: &Path, target_count: u32) -> Result<Vec<String>, String> {
+    if !template_dir.exists() {
+        return Err(format!("Template directory not found: {}", template_dir.display()));
+    }
+    let terminal_exe = template_dir.join("terminal64.exe");
+    if !terminal_exe.exists() {
+        return Err(format!("Template seems invalid (missing terminal64.exe): {}", template_dir.display()));
+    }
+    if target_count < 1 {
+        return Err("target_count must be at least 1".to_string());
+    }
+    std::fs::create_dir_all(clones_root).map_err(|e| format!("Failed to create clones root: {}", e))?;
+    let mut created: Vec<String> = Vec::new();
+    for i in 1..=target_count {
+        let folder_name = exness_clone_dir_name(i);
+        let target_dir = clones_root.join(&folder_name);
+        if target_dir.exists() {
+            continue;
+        }
+        copy_dir_recursive(template_dir, &target_dir)
+            .map_err(|e| format!("Failed to create {}: {}", folder_name, e))?;
+        created.push(folder_name);
+    }
+    Ok(created)
 }
 
 /// Exness copy hedge: N = number of Exness (copy) accounts. Broker B opens full volume V, Exness opens V/N.
@@ -797,6 +877,8 @@ async fn main() {
         .route("/api/close-both-bot", post(close_both_bot_set))
         .route("/api/exness-config", get(exness_config_get))
         .route("/api/exness-config", patch(exness_config_patch))
+        .route("/api/exness-clones", get(exness_clones_get))
+        .route("/api/exness-clones/create", post(exness_clones_create))
         .route("/api/worker/config", get(worker_config_get))
         .route("/api/worker/config", patch(worker_config_patch))
         .route("/api/worker/run-once", post(worker_run_once))
@@ -1426,6 +1508,83 @@ fn worker_compute_next_run_at(now_secs: i64, config: &WorkerConfig) -> Option<St
 struct ExnessConfigUpdate {
     #[serde(default)]
     exness_copy_count: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct ExnessCloneCreateRequest {
+    target_count: u32,
+}
+
+async fn exness_clones_get() -> impl IntoResponse {
+    let clones_root = exness_clones_root_dir();
+    let names = list_existing_exness_clone_names(&clones_root).unwrap_or_default();
+    (
+        StatusCode::OK,
+        axum::body::Body::from(
+            serde_json::json!({
+                "ok": true,
+                "clones_root": clones_root.display().to_string(),
+                "template_dir": EXNESS_TEMPLATE_DIR,
+                "existing_folders": names,
+                "existing_count": names.len(),
+            })
+            .to_string(),
+        ),
+    )
+}
+
+async fn exness_clones_create(Json(body): Json<ExnessCloneCreateRequest>) -> impl IntoResponse {
+    if body.target_count < 1 || body.target_count > 200 {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::body::Body::from(
+                serde_json::json!({ "ok": false, "error": "target_count must be between 1 and 200" }).to_string(),
+            ),
+        );
+    }
+    let clones_root = exness_clones_root_dir();
+    let template_dir = PathBuf::from(EXNESS_TEMPLATE_DIR);
+    let target_count = body.target_count;
+
+    let created_result = tokio::task::spawn_blocking(move || {
+        create_exness_clones_to_count(&template_dir, &clones_root, target_count)
+    })
+    .await;
+
+    let created = match created_result {
+        Ok(Ok(v)) => v,
+        Ok(Err(err)) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::body::Body::from(serde_json::json!({ "ok": false, "error": err }).to_string()),
+            )
+        }
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::body::Body::from(
+                    serde_json::json!({ "ok": false, "error": format!("Task failed: {}", err) }).to_string(),
+                ),
+            )
+        }
+    };
+
+    let root = exness_clones_root_dir();
+    let names = list_existing_exness_clone_names(&root).unwrap_or_default();
+    (
+        StatusCode::OK,
+        axum::body::Body::from(
+            serde_json::json!({
+                "ok": true,
+                "target_count": target_count,
+                "created_folders": created,
+                "existing_folders": names,
+                "existing_count": names.len(),
+                "clones_root": root.display().to_string(),
+            })
+            .to_string(),
+        ),
+    )
 }
 
 async fn exness_config_get(State(state): State<AppState>) -> impl IntoResponse {

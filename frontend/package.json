@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node init && vite",
     "tunnel": "..\\tools\\cloudflared.exe tunnel --url http://localhost:5173",
-    "build": "tsc -b && vite build",
+    "build": "node init && tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
